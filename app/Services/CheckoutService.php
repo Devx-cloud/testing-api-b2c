@@ -9,6 +9,7 @@ use App\Models\Store;
 use App\Models\TokodaringUser;
 use App\Models\UserAddress;
 use App\Services\Interfaces\CheckoutServiceInterface;
+use Hashids\Hashids;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -312,7 +313,7 @@ class CheckoutService implements CheckoutServiceInterface
                 $order->negotiation_status = 'none';
                 $order->save();
 
-                $order->invoice = sprintf('INV-%s-%d', now()->format('Ymd'), $order->id);
+                $order->invoice = $this->generateInvoice($order->id);
                 $order->save();
 
                 foreach ($lineItems as $lineItem) {
@@ -357,6 +358,30 @@ class CheckoutService implements CheckoutServiceInterface
                 'grand_total' => $grandTotal,
             ];
         });
+    }
+
+    /**
+     * Sama persis dengan algoritme OrderEntityListener di nusantaramall-b2c (Symfony),
+     * supaya format invoice konsisten lintas sistem meski dibuat dari Laravel -
+     * keduanya menulis ke tabel `order` yang sama dan kolom `invoice` punya UNIQUE INDEX.
+     */
+    private function generateInvoice(int $orderId): string
+    {
+        $alphabet = config('services.invoice.hashids_alphabet');
+        $baseFormat = config('services.invoice.base_format');
+
+        $encoder = new Hashids('App\Entity\Order', 6, $alphabet);
+        $hash = $encoder->encode($orderId);
+        $invoice = sprintf($baseFormat, now()->format('m'), now()->format('Y'), $hash);
+
+        if (Order::where('invoice', $invoice)->exists()) {
+            $salt = 'App\Entity\DuplicateOrder-' . now()->format('YmdHis');
+            $duplicateEncoder = new Hashids($salt, 7, $alphabet);
+            $hash = $duplicateEncoder->encode($orderId);
+            $invoice = sprintf($baseFormat, now()->format('m'), now()->format('Y'), $hash);
+        }
+
+        return $invoice;
     }
 
     private function normalizeCostOptions(array $data, string $courierFallback): array

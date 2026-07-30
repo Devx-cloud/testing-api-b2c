@@ -24,6 +24,13 @@ return [
         'api_key' => env('RAJA_ONGKIR_API_KEY'),
     ],
 
+    // Harus sama dengan nusantaramall-b2c (Symfony) agar format invoice konsisten
+    // lintas sistem, karena keduanya menulis ke tabel `order` yang sama.
+    'invoice' => [
+        'hashids_alphabet' => env('HASHIDS_ALPHABET', 'abcdefghijklmnopqrstuvwxyz1234567890'),
+        'base_format' => env('BASE_INVOICE', 'BM-INVOICE/%s/%s/%s'),
+    ],
+
     'mailgun' => [
         'domain' => env('MAILGUN_DOMAIN'),
         'secret' => env('MAILGUN_SECRET'),
