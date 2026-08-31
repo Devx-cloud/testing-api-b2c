@@ -31,6 +31,16 @@ return [
         'base_format' => env('BASE_INVOICE', 'BM-INVOICE/%s/%s/%s'),
     ],
 
+    // Memori percakapan WhatsApp AI Agent (tabel wa_*). Tidak ada secret baru,
+    // otentikasi endpoint tetap lewat services.api.key (header 'Token').
+    'wa_memory' => [
+        'gap_hours' => env('WA_THREAD_GAP_HOURS', 12),
+        'default_char_budget' => env('WA_CONTEXT_CHAR_BUDGET', 6000),
+        'default_recent_turns' => env('WA_HISTORY_RECENT_TURNS', 12),
+        'prune_days' => env('WA_PRUNE_DAYS', 45),
+        'prune_keep_min' => env('WA_PRUNE_KEEP_MIN', 40),
+    ],
+
     'mailgun' => [
         'domain' => env('MAILGUN_DOMAIN'),
         'secret' => env('MAILGUN_SECRET'),

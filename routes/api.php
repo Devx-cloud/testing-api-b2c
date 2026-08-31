@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AddressController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ShippingController;
+use App\Http\Controllers\Api\WaMemoryController;
 use App\Http\Controllers\Api\WhatsappUserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -40,4 +41,16 @@ Route::middleware('auth.apikey')->group(function () {
 
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{invoice}', [OrderController::class, 'show']);
+
+    // Memori percakapan WhatsApp AI Agent (tabel wa_*).
+    Route::post('/wa/customers/resolve', [WaMemoryController::class, 'resolveCustomer']);
+    Route::get('/wa/conversations/{conversation}/context', [WaMemoryController::class, 'context']);
+    Route::post('/wa/conversations/{conversation}/messages', [WaMemoryController::class, 'appendMessages']);
+    Route::put('/wa/conversations/{conversation}/summary', [WaMemoryController::class, 'putSummary']);
+    Route::get('/wa/customers/{customer}/facts', [WaMemoryController::class, 'facts']);
+    Route::post('/wa/customers/{customer}/facts', [WaMemoryController::class, 'upsertFacts']);
+    Route::get('/wa/customers/{customer}/session-state', [WaMemoryController::class, 'getSessionState']);
+    Route::put('/wa/customers/{customer}/session-state', [WaMemoryController::class, 'putSessionState']);
+    Route::post('/wa/customers/{customer}/embeddings', [WaMemoryController::class, 'storeEmbedding']);
+    Route::post('/wa/customers/{customer}/embeddings/query', [WaMemoryController::class, 'queryEmbeddings']);
 });

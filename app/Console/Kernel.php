@@ -15,7 +15,10 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // $schedule->command('inspire')->hourly();
+        // Aktifkan kalau scheduler (cron `php artisan schedule:run`) memang berjalan
+        // untuk deployment ini. Kalau tidak, jalankan `php artisan wa:prune-messages`
+        // manual / lewat cron eksternal.
+        // $schedule->command('wa:prune-messages')->dailyAt('03:30');
     }
 
     /**

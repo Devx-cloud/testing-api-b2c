@@ -5,8 +5,10 @@ namespace App\Providers;
 use App\Services\CheckoutService;
 use App\Services\Interfaces\CheckoutServiceInterface;
 use App\Services\Interfaces\ProductServiceInterface;
+use App\Services\Interfaces\WaMemoryServiceInterface;
 use App\Services\Interfaces\WhatsappUserServiceInterface;
 use App\Services\ProductService;
+use App\Services\WaMemoryService;
 use App\Services\WhatsappUserService;
 use Illuminate\Support\ServiceProvider;
 
@@ -32,6 +34,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             CheckoutServiceInterface::class,
             CheckoutService::class
+        );
+
+        $this->app->bind(
+            WaMemoryServiceInterface::class,
+            WaMemoryService::class
         );
     }
 
