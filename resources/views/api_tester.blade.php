@@ -218,7 +218,7 @@
 
         {{-- POST buat order (checkout) --}}
         <x-api-endpoint-card method="POST" endpoint="/api/orders"
-            description="Buat order (bisa lebih dari satu toko sekaligus, dihubungkan oleh shared_id). Harga & stok divalidasi ulang di server."
+            description="Buat order (bisa lebih dari satu toko sekaligus, dihubungkan oleh shared_id). Harga, stok, dan PPN dihitung ulang di server - shipping_price yang dikirim harus tarif mentah dari /shipping/cost. Respons memuat shared_invoice: nomor transaksi yang dipakai halaman Riwayat Transaksi Balimall."
             id="post-orders-checkout">
             @include('api_examples.post_orders_checkout_request')
         </x-api-endpoint-card>
@@ -228,7 +228,7 @@
             description="Ambil detail sebuah order berdasarkan nomor invoice." id="get-order-by-invoice">
             <x-slot name="parameters">
                 <input type="text" class="form-control form-control-sm" id="param-invoice-get-order-by-invoice"
-                    placeholder="Invoice, mis. INV-20260721-2888" style="width: 220px;">
+                    placeholder="Invoice, mis. BM-INVOICE/07/2026/n4kd9g" style="width: 260px;">
             </x-slot>
             @include('api_examples.get_order_by_invoice_response')
         </x-api-endpoint-card>

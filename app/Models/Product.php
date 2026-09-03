@@ -15,6 +15,11 @@ class Product extends Model
         return $this->hasMany(ProductFile::class);
     }
 
+    public function store(): BelongsTo
+    {
+        return $this->belongsTo(Store::class, 'store_id');
+    }
+
     public function categoryRelation(): BelongsTo
     {
         return $this->belongsTo(ProductCategory::class, 'category');

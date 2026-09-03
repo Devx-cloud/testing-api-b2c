@@ -40,7 +40,10 @@ Route::middleware('auth.apikey')->group(function () {
     Route::post('/shipping/cost', [ShippingController::class, 'cost']);
 
     Route::post('/orders', [OrderController::class, 'store']);
-    Route::get('/orders/{invoice}', [OrderController::class, 'show']);
+    // Nomor invoice mengandung garis miring ("BM-INVOICE/09/2026/m2e72m"), jadi
+    // parameternya harus boleh mencakup beberapa segmen path. Tanpa where() ini
+    // endpoint-nya selalu 404 karena {invoice} default-nya berhenti di '/'.
+    Route::get('/orders/{invoice}', [OrderController::class, 'show'])->where('invoice', '.+');
 
     // Memori percakapan WhatsApp AI Agent (tabel wa_*).
     Route::post('/wa/customers/resolve', [WaMemoryController::class, 'resolveCustomer']);

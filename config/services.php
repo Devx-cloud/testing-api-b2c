@@ -31,6 +31,13 @@ return [
         'base_format' => env('BASE_INVOICE', 'BM-INVOICE/%s/%s/%s'),
     ],
 
+    // PPN mengikuti nusantaramall-b2c (config/parameters.php -> tax_value, dalam
+    // persen). Hanya dikenakan kalau toko berstatus PKP (kolom store.is_pkp),
+    // sama seperti CartController::checkProductWithTaxByPKP() di sana.
+    'order' => [
+        'tax_value' => env('ORDER_TAX_VALUE', 11),
+    ],
+
     // Memori percakapan WhatsApp AI Agent (tabel wa_*). Tidak ada secret baru,
     // otentikasi endpoint tetap lewat services.api.key (header 'Token').
     'wa_memory' => [

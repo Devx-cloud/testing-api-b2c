@@ -2,14 +2,16 @@
 {
     "data": {
         "id": 2888,
-        "invoice": "INV-20260721-2888",
+        "invoice": "BM-INVOICE/07/2026/n4kd9g",
         "shared_id": "4-juIH3zS0",
+        "shared_invoice": "BM-INVOICE/07/2026/wvre2yxnr51m1g5n37",
         "store_id": 3,
         "status": "pending",
         "total": "66000.00",
         "shipping_courier": "jne",
         "shipping_service": "CTC",
         "shipping_price": "28000.00",
+        "tax_total": 0,
         "grand_total": 94000,
         "name": "Santi",
         "phone": "+6281234567893",

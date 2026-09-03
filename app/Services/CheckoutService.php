@@ -5,11 +5,12 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\OrderProduct;
 use App\Models\Product;
+use App\Models\ProductCategory;
 use App\Models\Store;
 use App\Models\TokodaringUser;
 use App\Models\UserAddress;
 use App\Services\Interfaces\CheckoutServiceInterface;
-use Hashids\Hashids;
+use App\Support\InvoiceNumber;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -237,6 +238,9 @@ class CheckoutService implements CheckoutServiceInterface
 
         return DB::transaction(function () use ($buyer, $address, $stores, $note) {
             $sharedId = sprintf('%d-%s', $buyer->id, Str::random(8));
+            $taxValue = (float) config('services.order.tax_value', 11);
+            /** @var Order[] $createdOrders */
+            $createdOrders = [];
             $results = [];
             $grandTotal = 0;
 
@@ -246,8 +250,13 @@ class CheckoutService implements CheckoutServiceInterface
                     throw new InvalidArgumentException("Toko ID {$storeInput['store_id']} tidak ditemukan.");
                 }
 
+                // PPN ditentukan status PKP toko, bukan input client - sama seperti
+                // CartController::checkProductWithTaxByPKP() di nusantaramall-b2c.
+                $withTax = (bool) $store->is_pkp;
+
                 $lineItems = [];
                 $subtotal = 0;
+                $taxTotal = 0;
 
                 foreach ($storeInput['items'] as $item) {
                     /** @var Product $product */
@@ -269,17 +278,30 @@ class CheckoutService implements CheckoutServiceInterface
                     // Harga & stok diambil dari database, bukan dari input client.
                     $price = (float) $product->price;
                     $totalPrice = $price * (int) $item['quantity'];
+                    // Harga katalog belum termasuk PPN, jadi nominalnya disimpan
+                    // terpisah di order_product.tax_nominal dan TIDAK ditambahkan ke
+                    // order.total - persis seperti alur checkout B2C.
+                    $taxNominal = $withTax ? $totalPrice * ($taxValue / 100) : 0.0;
+
                     $subtotal += $totalPrice;
+                    $taxTotal += $taxNominal;
 
                     $lineItems[] = [
                         'product' => $product,
                         'quantity' => (int) $item['quantity'],
                         'price' => $price,
                         'total_price' => $totalPrice,
+                        'tax_nominal' => $taxNominal,
                     ];
                 }
 
                 $shippingPrice = (float) ($storeInput['shipping_price'] ?? 0);
+                // Ongkir yang dikirim client adalah tarif mentah dari /shipping/cost.
+                // Toko PKP menagih ongkir sudah termasuk PPN - OrderController::process
+                // di nusantaramall-b2c melakukan hal yang sama sebelum menyimpan order.
+                if ($withTax) {
+                    $shippingPrice += $shippingPrice * ($taxValue / 100);
+                }
 
                 $order = new Order();
                 $order->store_id = $store->id;
@@ -326,9 +348,11 @@ class CheckoutService implements CheckoutServiceInterface
                     $orderProduct->quantity = $lineItem['quantity'];
                     $orderProduct->price = $lineItem['price'];
                     $orderProduct->total_price = $lineItem['total_price'];
-                    $orderProduct->base_price = $product->price;
-                    $orderProduct->with_tax = false;
-                    $orderProduct->tax_nominal = 0;
+                    $orderProduct->base_price = (float) $product->base_price;
+                    $orderProduct->with_tax = $withTax;
+                    $orderProduct->tax_value = (string) ($withTax ? $taxValue : 0);
+                    $orderProduct->tax_nominal = $lineItem['tax_nominal'];
+                    $orderProduct->fee = $this->categoryFeeOf($product);
                     $orderProduct->original_id = $product->id;
                     $orderProduct->original_name = $product->name;
                     $orderProduct->price_before_negotiation = 0;
@@ -338,26 +362,94 @@ class CheckoutService implements CheckoutServiceInterface
                     $product->decrement('quantity', $lineItem['quantity']);
                 }
 
-                $orderGrandTotal = $subtotal + $shippingPrice;
+                // Yang ditagih ke pembeli = total + ongkir + PPN, sama dengan rumus
+                // grand_total di templates/public/user/order/index_v2.html.twig.
+                $orderGrandTotal = $subtotal + $shippingPrice + $taxTotal;
                 $grandTotal += $orderGrandTotal;
 
+                $createdOrders[] = $order;
                 $results[] = [
                     'store_id' => $store->id,
                     'store_name' => $store->name,
                     'order_id' => $order->id,
                     'invoice' => $order->invoice,
                     'subtotal' => $subtotal,
+                    'tax_total' => $taxTotal,
                     'shipping_price' => $shippingPrice,
                     'grand_total' => $orderGrandTotal,
                 ];
             }
 
+            $sharedInvoice = $this->assignSharedInvoice($createdOrders);
+
+            foreach (array_keys($results) as $index) {
+                $results[$index]['shared_invoice'] = $sharedInvoice;
+            }
+
             return [
                 'shared_id' => $sharedId,
+                'shared_invoice' => $sharedInvoice,
                 'orders' => $results,
                 'grand_total' => $grandTotal,
             ];
         });
+    }
+
+    /**
+     * Beri satu nomor transaksi (`shared_invoice`) untuk seluruh order pada checkout ini.
+     *
+     * Tanpa kolom ini order tetap muncul di riwayat transaksi B2C tapi lumpuh: nomor
+     * transaksinya kosong dan tombol "Detail Transaksi" jatuh ke `javascript:void(0);`,
+     * karena `index_v2.html.twig` baru membuat link `user_order_shared` kalau
+     * `o_sharedInvoice` terisi. Di Symfony langkah ini dikerjakan
+     * SetOrderSharedInvoiceEntityListener setelah semua order tersimpan; di sini
+     * ditiru pada titik yang sama - sesudah loop toko, sebelum transaksi di-commit.
+     *
+     * @param Order[] $orders
+     */
+    private function assignSharedInvoice(array $orders): ?string
+    {
+        if (empty($orders)) {
+            return null;
+        }
+
+        $alphabet = config('services.invoice.hashids_alphabet');
+        $orderIds = array_map(function (Order $order) {
+            return (int) $order->id;
+        }, $orders);
+
+        // Nomornya dihitung SEKALI dari invoice order pertama, lalu dipasang apa
+        // adanya ke seluruh order. Menghitung ulang per order (memakai prefiks
+        // invoice masing-masing) menghasilkan nomor berbeda kalau satu checkout
+        // kebetulan melewati pergantian bulan - order pertama "BM-INVOICE/09/...",
+        // order kedua "BM-INVOICE/10/...". Transaksinya lalu pecah jadi dua kartu
+        // di riwayat transaksi dan halaman detail hanya menemukan sebagian pesanan.
+        $sharedInvoice = InvoiceNumber::shared($orderIds, $orders[0]->invoice, $alphabet);
+
+        foreach ($orders as $order) {
+            $order->shared_invoice = $sharedInvoice;
+            $order->save();
+        }
+
+        return $sharedInvoice;
+    }
+
+    /**
+     * Fee kategori produk, ditulis ke order_product.fee seperti OrderEntityListener
+     * di nusantaramall-b2c (dipakai perhitungan disbursement ke merchant).
+     * Kolom `product.category` bisa berisi beberapa id ("1,5"); yang pertama dipakai.
+     */
+    private function categoryFeeOf(Product $product): float
+    {
+        $categoryId = (int) explode(',', (string) $product->category)[0];
+
+        if ($categoryId < 1) {
+            return 0.0;
+        }
+
+        $category = ProductCategory::find($categoryId);
+
+        return (float) ($category->fee ?? 0);
     }
 
     /**
@@ -369,16 +461,17 @@ class CheckoutService implements CheckoutServiceInterface
     {
         $alphabet = config('services.invoice.hashids_alphabet');
         $baseFormat = config('services.invoice.base_format');
-
-        $encoder = new Hashids('App\Entity\Order', 6, $alphabet);
-        $hash = $encoder->encode($orderId);
-        $invoice = sprintf($baseFormat, now()->format('m'), now()->format('Y'), $hash);
+        $invoice = InvoiceNumber::forOrder($orderId, $alphabet, $baseFormat, now()->format('m'), now()->format('Y'));
 
         if (Order::where('invoice', $invoice)->exists()) {
-            $salt = 'App\Entity\DuplicateOrder-' . now()->format('YmdHis');
-            $duplicateEncoder = new Hashids($salt, 7, $alphabet);
-            $hash = $duplicateEncoder->encode($orderId);
-            $invoice = sprintf($baseFormat, now()->format('m'), now()->format('Y'), $hash);
+            $invoice = InvoiceNumber::forDuplicateOrder(
+                $orderId,
+                $alphabet,
+                $baseFormat,
+                now()->format('m'),
+                now()->format('Y'),
+                now()->format('YmdHis')
+            );
         }
 
         return $invoice;
